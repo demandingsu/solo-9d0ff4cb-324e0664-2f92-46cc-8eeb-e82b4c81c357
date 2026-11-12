@@ -61,6 +61,19 @@ class QueryRequest(BaseModel):
         return v
 
 
+class EvidenceRequest(BaseModel):
+    """页面取证入参。"""
+
+    index_url: str = Field(..., description="公告列表首页 URL（同站分页的起点）")
+
+    @field_validator("index_url")
+    @classmethod
+    def _url_scheme(cls, v: str) -> str:
+        if not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError("index_url 必须是 http/https URL")
+        return v
+
+
 class ActiveSuspension(BaseModel):
     """查询时刻仍然有效的停运区间。"""
 

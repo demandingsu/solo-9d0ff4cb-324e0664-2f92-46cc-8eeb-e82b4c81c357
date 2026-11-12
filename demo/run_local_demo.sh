@@ -39,3 +39,13 @@ echo "== 查询时刻: $QUERY_TIME =="
 curl -s -X POST http://127.0.0.1:8000/query \
   -H 'Content-Type: application/json' \
   -d "{\"index_url\":\"$SITE_URL\",\"query_time\":\"$QUERY_TIME\"}" | "$PY" -I -m json.tool
+
+# 4) 页面取证：下载证据包并核对清单
+echo "== 页面取证：下载证据包 =="
+EVIDENCE_FILE="$ROOT/evidence-local.zip"
+curl -sf -X POST http://127.0.0.1:8000/evidence \
+  -H 'Content-Type: application/json' \
+  -d "{\"index_url\":\"$SITE_URL\"}" -o "$EVIDENCE_FILE"
+"$PY" -I -m zipfile -l "$EVIDENCE_FILE"
+echo "证据包已保存: $EVIDENCE_FILE"
+echo "核对清单: unzip -p $EVIDENCE_FILE manifest.json"

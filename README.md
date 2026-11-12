@@ -4,6 +4,9 @@
 本服务用 FastAPI + BeautifulSoup 抓取同站分页与详情页，按公告编号引用关系与发布时间
 还原**更正/撤销公告链**，返回有效停运区间、来源链接及无法匹配的引用。
 
+另提供**页面取证接口**：公告原文被改写引发争议时，把当次采集实际收到的网页字节
+打成可下载的 ZIP 证据包（含逐页清单与 SHA-256），供同事离线核对。
+
 ## 业务规则
 
 | 规则 | 实现 |
@@ -21,6 +24,36 @@
 停运区间按半开 `[suspend_start, suspend_end)` 判定：查询时刻等于结束时刻即视为已失效。
 所有时间均要求带时区（ISO 8601 偏移），比较基于同一时间线瞬间。
 
+## 页面取证（POST /evidence）
+
+线路资料员遇到公告原文被改写的争议时，用该接口留存当次采集的网页供离线核对：
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/evidence \
+  -H 'Content-Type: application/json' \
+  -d '{"index_url":"http://127.0.0.1:8080/index.html"}' \
+  -o evidence.zip
+
+unzip -p evidence.zip manifest.json   # 核对清单
+```
+
+* 从 `index_url` 出发沿同站分页抓取列表及所列详情，把**实际收到的 HTML 字节**
+  存入 ZIP（`pages/` 目录），成功时直接返回 `application/zip` 附件下载；
+* ZIP 内 `manifest.json` 逐页记录：页面类型（`list`/`detail`）、请求地址
+  （`request_url`）、跟随同站跳转后的最终地址（`final_url`）、SHA-256 及
+  ZIP 内文件名；**同一最终地址只收录一次**；
+* 重定向手动跟随：**站外跳转在访问目标前阻断**，目标地址不会被请求；
+* 取证要求完整或失败：出现下列任一情况时返回 `502` 及具体原因
+  （`detail.reason` / `detail.message`），**不生成缺页的证据包**：
+
+| reason | 含义 |
+| --- | --- |
+| `fetch_failed` | 网络错误、非 2xx 状态、重定向次数超限 |
+| `offsite_redirect_blocked` | 页面跳转到站外地址，已在访问目标前阻断 |
+| `pagination_loop` | 分页链接形成循环（重复请求或最终地址重复） |
+| `limit_exceeded` | 列表分页超过 50 页或详情超过 500 条 |
+| `parse_failed` | 列表页结构无法识别，或详情页缺少公告编号/发布时间 |
+
 ## 目录结构
 
 ```
@@ -29,12 +62,13 @@ app/                 FastAPI 采集服务
   app/parser.py      BeautifulSoup 解析：分页 rel=next、详情链接、详情字段
   app/crawler.py     同站分页 + 详情抓取（httpx 异步，限量/去重/错误收集）
   app/engine.py      公告链还原与有效性判定（纯函数，无 IO）
-  app/main.py        POST /query、GET /health
+  app/evidence.py    页面取证：手动跟随重定向、失败即中止、ZIP+清单打包
+  app/main.py        POST /query、POST /evidence、GET /health
   Dockerfile
 site/                本地示例公告站（数据驱动生成纯静态 HTML）
   build_site.py      生成 html/（3 个列表页 + 13 条详情，覆盖全部场景）
   Dockerfile         python -m http.server 托管静态站
-tests/               22 个单元/集成测试（pytest）
+tests/               40 个单元/集成测试（pytest）
 demo/                本地与 Compose 演示脚本
 docker-compose.yml   api(8000) + notice-site(8080)
 ```
@@ -51,6 +85,11 @@ curl -s -X POST http://127.0.0.1:8000/query \
   -H 'Content-Type: application/json' \
   -d '{"index_url":"http://notice-site:8080/index.html",
        "query_time":"2026-11-11T10:00:00+08:00"}'
+
+# 页面取证：下载证据包（容器网络内抓取，清单以 notice-site 地址记录）
+curl -s -X POST http://127.0.0.1:8000/evidence \
+  -H 'Content-Type: application/json' \
+  -d '{"index_url":"http://notice-site:8080/index.html"}' -o evidence.zip
 ```
 
 容器内 API 通过 Compose 网络访问 `notice-site`；从宿主机调用时 `index_url`

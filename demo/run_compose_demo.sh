@@ -21,4 +21,14 @@ curl -s -X POST http://127.0.0.1:8000/query \
   -d '{"index_url":"http://notice-site:8080/index.html","query_time":"'"$QUERY_TIME"'"}'
 
 echo
+echo "== 页面取证：下载证据包 =="
+EVIDENCE_FILE="$ROOT/evidence-compose.zip"
+curl -sf -X POST http://127.0.0.1:8000/evidence \
+  -H 'Content-Type: application/json' \
+  -d '{"index_url":"http://notice-site:8080/index.html"}' -o "$EVIDENCE_FILE"
+python3 -m zipfile -l "$EVIDENCE_FILE"
+echo "证据包已保存: $EVIDENCE_FILE"
+echo "核对清单: unzip -p $EVIDENCE_FILE manifest.json"
+
+echo
 echo "演示完成，停止服务: docker compose down"
